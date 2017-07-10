@@ -3,6 +3,7 @@
     "es2015"
   ],
   "plugins": [
+    "syntax-dynamic-import",
     ["transform-react-jsx", { "pragma":"h" }],
     ["module-resolver", {
     "root": ["."],
@@ -15,6 +16,7 @@
   "env": {
     "test": {
       "plugins": [
+        "syntax-dynamic-import",
         "istanbul",
         ["transform-react-jsx", { "pragma": "h" }]
       ]

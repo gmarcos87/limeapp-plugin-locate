@@ -1,41 +1,24 @@
 import { h, Component } from 'preact';
 import style from './style.less';
 
+import Script from 'react-load-script';
+
 import { bindActionCreators } from 'redux';
 import { connect } from 'preact-redux';
 
 import { loadLocation, changeLocation, setUserLocation } from './locateActions';
 import { getLocation, getUserLocation, getSelectedHost } from './locateSelectors';
 
-import { Map, Marker, Popup, LayersControl, TileLayer } from 'react-leaflet';
-import { GoogleLayer } from 'react-leaflet-google';
+const key = 'AIzaSyBS0M7H7Ltk1ipjwqi8r9_WQJOzWfav4Ok';
 
-const { BaseLayer } = LayersControl;
-const key = 'AIzaSyBS0M7H7Ltk1ipjwqi8r9_WQJOzWfav4Ok	';
-const hybrid = 'HYBRID';
-const road = 'ROADMAP';
-
-import L from 'leaflet';
-
-/*
- * Fix issue leaflet+webpack
- * https://github.com/Leaflet/Leaflet/issues/4968
-*/
-L.Icon.Default.imagePath = '.';
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-  iconUrl: require('leaflet/dist/images/marker-icon.png'),
-  shadowUrl: require('leaflet/dist/images/marker-shadow.png')
-});
-
-
+let L;
 
 class Locate extends Component {
   constructor(props){
     super(props);
     this.state = {
-      draggable: false
+      scriptLoaded: false,
+      scriptError: false
     };
     
   }
@@ -58,49 +41,98 @@ class Locate extends Component {
     }
   }
 
-  toggleDraggable() {
-    this.setState({draggable: !this.state.draggable});
+  handleScriptCreate() {
+    this.setState({ scriptLoaded: false });
+  }
+  
+  handleScriptError() {
+    this.setState({ scriptError: true });
+  }
+  
+  handleScriptLoad() {
+    this.setState({ scriptLoaded: true });
+    L = window.L;
+    
+    const map = this.map = L.map('map').setView([this.props.stationLocation.lat, this.props.stationLocation.lon], 13);
+
+    import('leaflet.gridlayer.googlemutant').then(() => {
+
+      const satellite = L.gridLayer.googleMutant({type: 'satellite'});
+      const hybrid = L.gridLayer.googleMutant({type: 'hybrid'});
+      const base = L.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+
+
+      L.control.layers(
+        {
+          "Open Streat Map": base,
+          "Google Maps Satellite":satellite,
+          "Google Maps Hybrid":hybrid
+        },{},{position:'bottomright'}
+      ).addTo(map);
+    });
+
+
+    L.Icon.Default.imagePath = '.';
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
+      iconUrl: require('leaflet/dist/images/marker-icon.png'),
+      shadowUrl: require('leaflet/dist/images/marker-shadow.png')
+    });
+    
+    L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+
+    const popupNode = L.popup()
+      .setLatLng([this.props.stationLocation.lat, this.props.stationLocation.lon])
+      .setContent(`<strong>${window.I18n.t('Station')} </strong> ${this.props.stationHostname}<br/>
+          <span">
+              ${window.I18n.t('MOVE TO NEW POSITION')}
+          </span>
+        </span>`);
+
+    const marker = this.marker = L.marker([this.props.stationLocation.lat, this.props.stationLocation.lon],{
+      draggable: true,
+    })
+      .addTo(map)
+      .on('click', (x)=> map.setView(x.target._latlng))
+      .on('drag', (x)=> map.setView(x.target._latlng))
+      .on('moveend', (x)=> this.updatePosition(x))
+      .bindPopup(popupNode);
   }
 
+  isLoaded(exist) {
+    if (exist === true) {
+      return (
+        <div></div>
+      );
+    }
+    return (<div>Loading...</div>);
+  }
+  
+  rerenderMap(latlon) {
+    if (this.state.scriptLoaded === true) {
+      this.map.setView([latlon.lat, latlon.lon]);
+      this.marker.setLatLng([latlon.lat, latlon.lon]);
+    }
+  }
   render({ user }, { time, count }) {
-
-
     return (
-        <Map center={[this.props.stationLocation.lat,this.props.stationLocation.lon]} zoomControl={false} zoom={16} style={{width:'100vw', height: '100vh'}} layers={[]}>
-          <LayersControl position={'bottomright'}>
-              <BaseLayer checked name='OpenStreetMap.Mapnik'>
-                <TileLayer
-                  attribution='&copy <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
-                  url='http://{s}.tile.osm.org/{z}/{x}/{y}.png'
-                />
-              </BaseLayer>
-              <BaseLayer  name='Google Maps Hybrid'>
-                <GoogleLayer googlekey={key}  maptype={hybrid} />
-              </BaseLayer>
-          </LayersControl>
-          <Marker
-            onDragend={this.updatePosition.bind(this)}
-            position={[this.props.stationLocation.lat,this.props.stationLocation.lon]}
-            draggable={this.state.draggable}>
-              <Popup>
-                <span>
-                  <strong>{window.I18n.t('Station')} </strong> {this.props.stationHostname}<br/>
-                  <span onClick={this.toggleDraggable.bind(this)}>
-                      {this.state.draggable ? (<u>{window.I18n.t('MOVE TO NEW POSITION')}</u>) : (<u>{window.I18n.t('PRES TO ENABLE CHANGES')}</u>)}
-                  </span>
-                </span>
-              </Popup>
-          </Marker>
-          <Marker
-            position={[this.props.userLocation.lat,this.props.userLocation.lon]}
-            draggable={false}>
-              <Popup>
-                <span>
-                  <strong>{window.I18n.t('User')}</strong>
-                </span>
-              </Popup>
-          </Marker>
-        </Map>
+        <div>
+          <Script
+            url="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.0.3/leaflet-src.js"
+            onCreate={this.handleScriptCreate.bind(this)}
+            onError={this.handleScriptError.bind(this)}
+            onLoad={this.handleScriptLoad.bind(this)}
+          />
+          <Script url={"https://maps.googleapis.com/maps/api/js?key="+key} />
+          
+          <div id="map"></div>
+          {this.isLoaded(this.state.scriptLoaded)}
+          {this.rerenderMap(this.props.stationLocation)}
+        </div>
     );
   }
 }
