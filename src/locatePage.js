@@ -64,7 +64,7 @@ class Locate extends Component {
 
       L.control.layers(
         {
-          "Open Streat Map": base,
+          "Open Street Map": base,
           "Google Maps Satellite":satellite,
           "Google Maps Hybrid":hybrid
         },{},{position:'bottomright'}
